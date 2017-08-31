@@ -1,6 +1,7 @@
 package hex.genmodel.algos.deeplearning;
 
 import hex.genmodel.ModelMojoReader;
+import hex.genmodel.utils.DistributionFamily;
 
 import java.io.IOException;
 
@@ -27,6 +28,7 @@ public class DeeplearningMojoReader extends ModelMojoReader<DeeplearningMojoMode
     _model._use_all_factor_levels = readkv("use_all_factor_levels");
     _model._activation = readkv("activation");
     _model._imputeMeans = readkv("mean_imputation");
+    _model._family = DistributionFamily.valueOf((String)readkv("distribution"));
     if (_model._imputeMeans & (_model._cats > 0)) {
       _model._catNAFill = readkv("cat_modes");
     }

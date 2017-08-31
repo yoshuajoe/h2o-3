@@ -1,7 +1,7 @@
 package hex.genmodel.algos.deeplearning;
 
-import hex.genmodel.GenModel;
 import hex.genmodel.MojoModel;
+import hex.genmodel.utils.DistributionFamily;
 
 public class DeeplearningMojoModel extends MojoModel {
   public int _mini_batch_size;
@@ -22,6 +22,7 @@ public class DeeplearningMojoModel extends MojoModel {
   public StoreWeightsBias[] _bias;    // store bias of different layers
   public int[] _catNAFill; // if mean imputation is true, mode imputation for categorical columns
   public int _numLayers;    // number of neural network layers.
+  public DistributionFamily _family;
 
   /***
    * Should set up the neuron network frame work here
@@ -70,49 +71,33 @@ public class DeeplearningMojoModel extends MojoModel {
     }
     assert(_nclasses == neuronsInput.length) : "nclasses " + _nclasses + " neuronsOutput.length " + neuronsInput.length;
     // Correction for classification or standardize outputs
-    if (this.isClassifier()) {
-    for (int i = 0; i < neuronsInput.length; ++i)
-      preds[1 + i] = neuronsInput[i];
-    if (_balanceClasses)
-      GenModel.correctProbabilities(preds, _priorClassDistrib, _modelClassDistrib);
-    preds[0] = GenModel.getPrediction(preds, _priorClassDistrib, dataRow, _defaultThreshold);
-  } else {
-    if (_normrespmul!=null && _normrespsub!=null)
-      preds[0] = neuronsInput[0] / _normrespmul[0] + _normrespsub[0];
-    else
-      preds[0] = neuronsInput[0];
-  }
+    modifyOutputs(neuronsInput, preds);
     return preds;
   }
 
-  /***
-   * replace the missing numerical columns with column mean.
-   * @param input
-   * @return
-   */
-  private double[] imputeMissingWithMeans(float[] input) {
-    double[] out = new double[input.length];
-    int catNum = input.length-_nums;
-
-    for (int index = 0; index < catNum; index++) {
-      out[index] = (double) input[index];
-    }
-    if (_normsub != null) {
-      for (int index = catNum; index < input.length; index++) {
-        if (Double.isNaN(input[index]))
-          out[index] = _normsub[index-catNum];
-        else
-          out[index] = (double) input[index];
+  public void modifyOutputs(double[] out, double[] preds) {
+    if (_family == DistributionFamily.modified_huber) {
+      preds[0] = -1;
+      preds[2] = _family.linkInv(preds[0]);
+      preds[1] = 1 - preds[2];
+    } else if (this.isClassifier()) {
+      assert (preds.length == out.length + 1);
+      for (int i = 0; i < preds.length - 1; ++i) {
+        preds[i + 1] = out[i];
+        if (Double.isNaN(preds[i + 1])) throw new RuntimeException("Predicted class probability NaN!");
       }
+      // label assignment happens later - explicitly mark it as invalid here
+      preds[0] = -1;
     } else {
-      for (int index = catNum; index < input.length; index++) {
-        if (Double.isNaN(input[index]))
-          out[index] = 0.0;
-        else
-          out[index] = (double) input[index];
-      }
+      if (_normrespmul != null) //either both are null or none
+        preds[0] = (out[0] / _normrespmul[0] + _normrespsub[0]);
+      else
+        preds[0] = out[0];
+      // transform prediction to response space
+      preds[0] = _family.linkInv(preds[0]);
+      if (Double.isNaN(preds[0]))
+        throw new RuntimeException("Predicted regression target NaN!");
     }
-    return out;
   }
 
   public static double[] convertFloat2Double(float[] input) {
@@ -121,14 +106,6 @@ public class DeeplearningMojoModel extends MojoModel {
     for (int index=0; index<arraySize; index++)
       output[index] = (double) input[index];
     return output;
-  }
-
-  public double[] fprop(float[] input2Neurons) {
-
-    double[] outputs = new double[_units[-1]];  // initiate neural network outputs
-
-
-    return outputs;
   }
 
   @Override
