@@ -5,37 +5,65 @@ import h2o
 from tests import pyunit_utils
 import random
 from random import randint
+import re
+import subprocess
+from subprocess import STDOUT,PIPE
+from h2o.estimators.deeplearning import H2ODeepLearningEstimator
 
 NTESTROWS = 1000    # number of test dataset rows
 MAXLAYERS = 8
 MAXNODESPERLAYER = 20
+TMPDIR = ""
+POJONAME = ""
+PROBLEM="regression"
 
 def deeplearning_mojo():
+    h2o.remove_all()
 
-    # h2o_data = h2o.upload_file(path=pyunit_utils.locate("smalldata/logreg/prostate.csv"))
-    # h2o_data.summary()
-    # parmsGLM = {'family':'binomial', 'alpha':0.5, 'standardize':True}
-    # pyunit_utils.javapredict("glm", "class", h2o_data, h2o_data, list(range(2, h2o_data.ncol)), 1, pojo_model=False,
-    #                          **parmsGLM)
+    params = set_params()   # set deeplearning model parameters
 
+    df = random_dataset(PROBLEM)       # generate random dataset
+    train = df[NTESTROWS:, :]
+    test = df[:NTESTROWS, :]
+    x = list(set(df.names) - {"response"})
+
+    try:
+        deeplearningModel = build_save_model(params, x, train) # build and save mojo model
+        h2o.download_csv(test[x], os.path.join(TMPDIR, 'in.csv'))  # save test file, h2o predict/mojo use same file
+        pred_h2o = mojo_predict(deeplearningModel, x)  # load model and perform predict
+
+        pred_mojo = h2o.import_file(os.path.join(TMPDIR, 'out_mojo.csv'))  # load mojo prediction into a frame and compare
+        pyunit_utils.compare_frames(pred_h2o, pred_mojo, min(100, pred_mojo.ncols*pred_mojo.nrows), tol_numeric=1e-4)
+    except Exception as ex:
+        if hasattr(ex, 'args') and type(ex.args[0]==type("what")):
+            if "unstable model" not in ex.args[0]:
+                print(params)
+                print(ex)
+                sys.exit(1)     # okay to encounter unstable model not nothingh else
+            else:
+                print("An unstable model is found and no mojo is built.")
+
+
+def set_params():
+    global PROBLEM
     allAct = ["maxout", "rectifier", "maxout_with_dropout", "tanh_with_dropout", "rectifier_with_dropout", "tanh"]
     problemType = ["binomial", "multinomial", "regression"]
     missingValues = ['Skip', 'MeanImputation']
     allFactors = [True, False]
     categoricalEncodings = ['auto', 'one_hot_internal', 'binary', 'eigen']
 
-    problem = problemType[randint(0,len(problemType)-1)]
+    enableEncoder = allFactors[randint(0,len(allFactors)-1)]    # enable autoEncoder or not
+    if (enableEncoder): # maxout not support for autoEncoder
+        allAct = ["rectifier", "tanh_with_dropout", "rectifier_with_dropout", "tanh"]
+    PROBLEM = problemType[randint(0,len(problemType)-1)]
     actFunc = allAct[randint(0,len(allAct)-1)]
     missing_values = missingValues[randint(0, len(missingValues)-1)]
     cateEn = categoricalEncodings[randint(0, len(categoricalEncodings)-1)]
 
-
-    if (problem=='regression'):
+    if PROBLEM=='regression' or enableEncoder:
         loss = 'Automatic'
-        prob = 'numeric'
     else:
         loss = 'CrossEntropy'
-        prob = 'class'
 
     hiddens, hidden_dropout_ratios = random_networkSize(actFunc)    # generate random size layers
     params = {}
@@ -45,21 +73,54 @@ def deeplearning_mojo():
                   'use_all_factor_levels': allFactors[randint(0, len(allFactors) - 1)],
                   'hidden_dropout_ratios': hidden_dropout_ratios,
                   'input_dropout_ratio': random.uniform(0, 0.5),
-                  'categorical_encoding':cateEn
+                  'categorical_encoding':cateEn,
+                  'autoencoder':enableEncoder
                   }
     else:
         params = {'loss': loss, 'hidden': hiddens, 'standardize': True,
                   'missing_values_handling': missing_values, 'activation': actFunc,
                   'use_all_factor_levels': allFactors[randint(0, len(allFactors) - 1)],
                   'input_dropout_ratio': random.uniform(0, 0.5),
-                  'categorical_encoding':cateEn
+                  'categorical_encoding':cateEn,
+                  'autoencoder':enableEncoder
                   }
-    df = random_dataset(problem)       # generate random dataset
-    train = df[NTESTROWS:, :]
-    test = df[:NTESTROWS, :]
     print(params)
-    pyunit_utils.javapredict("deeplearning", prob, train, test, list(set(df.names) - {"response"}),
-                              "response", pojo_model=False, save_model=False, **params) # want to build mojo
+    return params
+
+# perform h2o predict and mojo predict.  Frame containing h2o prediction is returned and mojo predict is
+# written to file.
+def mojo_predict(model, x):
+    newTest = h2o.import_file(os.path.join(TMPDIR, 'in.csv'))   # Make sure h2o and mojo use same in.csv
+    predictions1 = model.predict(newTest)
+
+    # load mojo and have it do predict
+    outFileName = os.path.join(TMPDIR, 'out_mojo.csv')
+    java_cmd = ["java", "-ea", "-cp", "/Users/wendycwong/h2o-3/h2o-assemblies/genmodel/build/libs/genmodel.jar",
+                "-Xmx12g", "-XX:MaxPermSize=2g", "-XX:ReservedCodeCacheSize=256m", "hex.genmodel.tools.PredictCsv",
+                "--input", os.path.join(TMPDIR, 'in.csv'), "--output",
+                outFileName, "--mojo", os.path.join(TMPDIR, POJONAME)+".zip", "--decimal"]
+    p = subprocess.Popen(java_cmd, stdout=PIPE, stderr=STDOUT)
+    o, e = p.communicate()
+    return predictions1
+
+def build_save_model(params, x, train):
+    global TMPDIR
+    global POJONAME
+    # build a model
+    model = H2ODeepLearningEstimator(**params)
+    if params['autoencoder']:
+        model.train(x=x, training_frame=train)
+    else:
+        model.train(x=x, y="response", training_frame=train)
+    # save model
+    regex = re.compile("[+\\-* !@#$%^&()={}\\[\\]|;:'\"<>,.?/]")
+    POJONAME = regex.sub("_", model._id)
+
+    print("Downloading Java prediction model code from H2O")
+    TMPDIR = os.path.normpath(os.path.join(os.path.dirname(os.path.realpath(__file__)), "..", "results", POJONAME))
+    os.makedirs(TMPDIR)
+    model.download_mojo(path=TMPDIR)    # save mojo
+    return model
 
 # generate random neural network architecture
 def random_networkSize(actFunc):

@@ -1,8 +1,8 @@
 package hex.deeplearning;
 
+import hex.ModelMetricsBinomial;
 import hex.ScoreKeeper;
 import hex.deeplearning.DeepLearningModel.DeepLearningParameters;
-import hex.ModelMetricsBinomial;
 import org.junit.Assert;
 import org.junit.BeforeClass;
 import org.junit.Test;
@@ -13,7 +13,6 @@ import water.TestUtil;
 import water.fvec.Frame;
 import water.fvec.NFSFileVec;
 import water.parser.ParseDataset;
-import water.util.FileUtils;
 import water.util.Log;
 
 public class DeepLearningSpiralsTest extends TestUtil {
@@ -69,7 +68,7 @@ public class DeepLearningSpiralsTest extends TestUtil {
           if (error > 0.1) {
             Assert.fail("Test classification error is not <= 0.1, but " + error + ".");
           }
-          Assert.assertTrue(mymodel.testJavaScoring(frame,pred,1e-6));
+          Assert.assertTrue(mymodel.testJavaScoring(frame,pred, 1e-8,1e-6));
           pred.delete();
           mymodel.delete();
         }

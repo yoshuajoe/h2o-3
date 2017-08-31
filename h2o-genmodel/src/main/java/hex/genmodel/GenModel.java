@@ -153,7 +153,7 @@ public abstract class GenModel implements IGenModel, IGeneratedModel, Serializab
   }
 
   public int getPredsSize(ModelCategory mc) {
-    return (mc == ModelCategory.DimReduction)? nclasses() : getPredsSize();
+    return (mc == ModelCategory.DimReduction)? nclasses() :getPredsSize();
   }
 
   public static String createAuxKey(String k) {
@@ -532,7 +532,10 @@ public abstract class GenModel implements IGenModel, IGeneratedModel, Serializab
     }
     for (int i = _cats; i < from.length; ++i) {
       double d = from[i];
-      if (_normMul != null) d = (d - _normSub[i - _cats]) * _normMul[i - _cats];
+
+      if ((_normMul != null) && (_normMul.length >0)) {
+        d = (d - _normSub[i - _cats]) * _normMul[i - _cats];
+      }
       nums[i - _cats] = (float)d; //can be NaN for missing numerical data
     }
     assert(to.length == _nums + _catOffsets[_cats]);

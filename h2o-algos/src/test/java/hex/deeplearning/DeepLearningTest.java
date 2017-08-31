@@ -495,7 +495,7 @@ public class DeepLearningTest extends TestUtil {
       hex.ModelMetrics.getFromDKV(model, test);
 
       // Build a POJO, validate same results
-      assertTrue(model.testJavaScoring(test, res, 1e-5));
+      assertTrue(model.testJavaScoring(test, res, 1e-8,1e-5));
 
     } finally {
       if (frTrain!=null) frTrain.remove();
@@ -557,7 +557,10 @@ public class DeepLearningTest extends TestUtil {
       for (int i = 0; i < N; ++i) {
         Log.info(models[i]._output._training_metrics.cm().table().toString());
         Assert.assertEquals(models[i]._output._training_metrics._MSE, models[0]._output._training_metrics._MSE, 1e-6);
+       // assertTrue(models[i].testJavaScoring(test, res, 1e-5));
       }
+
+
 
     }finally{
       for (int i=0; i<N; ++i)
@@ -1652,7 +1655,7 @@ public class DeepLearningTest extends TestUtil {
         ae = new DeepLearning(parms, key).trainModel().get();
         // test POJO
         Frame res = ae.score(tfr);
-        assertTrue(ae.testJavaScoring(tfr, res, 1e-5));
+        assertTrue(ae.testJavaScoring(tfr, res, 1e-8,1e-5));
         res.remove();
       }
 
@@ -2195,6 +2198,7 @@ public class DeepLearningTest extends TestUtil {
         small = fs.getResult()[0];
         large = fs.getResult()[1];
         preds = model.score(small);
+        assertTrue(model.testJavaScoring(small, preds, 1e-5));  // test mojo/pojo
         preds.remove(0); //remove label, keep only probs
         Vec labels = small.vec("C785"); //actual
         String[] fullDomain = train.vec("C785").domain(); //actual
@@ -2242,6 +2246,7 @@ public class DeepLearningTest extends TestUtil {
       model = new DeepLearning(p).trainModel().get();
 
       preds = model.score(train);
+ //     assertTrue(model.testJavaScoring(train, preds, 1e-5));  // test mojo/pojo
       preds.remove(0); //remove label, keep only probs
       Vec labels = train.vec("pclass"); //actual
       String[] fullDomain = train.vec("pclass").domain(); //actual
@@ -2282,6 +2287,7 @@ public class DeepLearningTest extends TestUtil {
       small = fs.getResult()[0];
       large = fs.getResult()[1];
       preds = model.score(small);
+      assertTrue(model.testJavaScoring(small, preds, 1e-5));  // test mojo/pojo
       Vec labels = small.vec("survived"); //actual
       String[] fullDomain = train.vec("survived").domain(); //actual
 
