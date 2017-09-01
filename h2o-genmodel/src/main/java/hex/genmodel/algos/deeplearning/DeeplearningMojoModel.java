@@ -1,5 +1,6 @@
 package hex.genmodel.algos.deeplearning;
 
+import hex.genmodel.GenModel;
 import hex.genmodel.MojoModel;
 import hex.genmodel.utils.DistributionFamily;
 
@@ -61,7 +62,6 @@ public class DeeplearningMojoModel extends MojoModel {
     setInput(dataRow, input2Neurons, _nums, _cats, _catoffsets, _normmul, _normsub, _use_all_factor_levels, true);
     neuronsInput = convertFloat2Double(input2Neurons);
 
-
     // proprogate inputs through neural network
     for (int layer=0; layer < _numLayers; layer++) {
       NeuralNetwork oneLayer = new NeuralNetwork(_allActivations[layer], _all_drop_out_ratios[layer], _weights[layer],
@@ -71,11 +71,11 @@ public class DeeplearningMojoModel extends MojoModel {
     }
     assert(_nclasses == neuronsInput.length) : "nclasses " + _nclasses + " neuronsOutput.length " + neuronsInput.length;
     // Correction for classification or standardize outputs
-    modifyOutputs(neuronsInput, preds);
+    modifyOutputs(neuronsInput, preds, dataRow);
     return preds;
   }
 
-  public void modifyOutputs(double[] out, double[] preds) {
+  public void modifyOutputs(double[] out, double[] preds, double[] dataRow) {
     if (_family == DistributionFamily.modified_huber) {
       preds[0] = -1;
       preds[2] = _family.linkInv(preds[0]);
@@ -86,8 +86,10 @@ public class DeeplearningMojoModel extends MojoModel {
         preds[i + 1] = out[i];
         if (Double.isNaN(preds[i + 1])) throw new RuntimeException("Predicted class probability NaN!");
       }
-      // label assignment happens later - explicitly mark it as invalid here
-      preds[0] = -1;
+
+      if (_balanceClasses)
+        GenModel.correctProbabilities(preds, _priorClassDistrib, _modelClassDistrib);
+      preds[0] = GenModel.getPrediction(preds, _priorClassDistrib, dataRow, _defaultThreshold);
     } else {
       if (_normrespmul != null) //either both are null or none
         preds[0] = (out[0] / _normrespmul[0] + _normrespsub[0]);
