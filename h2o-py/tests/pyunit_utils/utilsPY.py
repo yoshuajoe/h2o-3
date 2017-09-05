@@ -180,7 +180,6 @@ def javapredict(algo, equality, train, test, x, y, compile_only=False, separator
         h2o.download_pojo(model, path=tmpdir)
     else:
         model.download_mojo(path=tmpdir)
-        #h2o.download_mojo(model, path=tmpdir)
 
     if (save_model):
         h2o.save_model(model, path=tmpdir, force=True)  # save model for later compare
